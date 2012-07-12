@@ -452,6 +452,36 @@ class API(ModelView):
                          and self.results_per_page > 0)
         self.post_form_preprocessor = post_form_preprocessor
 
+    """
+    Extension hooks. Child classes should override these.
+    """
+    def _after_search(self, models, page_num=None):
+        pass
+    
+    def _after_get(self, model):
+        pass
+    
+    def _after_update(self, query, data, num_modified):
+        pass
+    
+    def _after_delete(self, model):
+        pass
+    
+    def _before_search(self, result):
+        """
+        `result` - either single model or list of models
+        """
+        return True
+    
+    def _before_get(self, model):
+        return True
+    
+    def _before_update(self, query, data):
+        return True
+    
+    def _before_delete(self, model):
+        return True
+    
     def _add_to_relation(self, query, relationname, toadd=None):
         """Adds a new or existing related model to each model specified by
         `query`.
@@ -718,6 +748,10 @@ class API(ModelView):
             return jsonify_status_code(400,
                                        message='Unable to construct query')
 
+        proceed = self._before_search(result)
+        if proceed != True:
+            return proceed
+        
         # create a placeholder for the relations of the returned models
         relations = _get_relations(self.model)
         deep = dict((r, {}) for r in relations)
@@ -728,6 +762,7 @@ class API(ModelView):
         else:
             result = _to_dict_include(result, deep,
                                       include=self.include_columns)
+            self._after_search(result)
             return jsonify(result)
 
     # TODO it is ugly to have `deep` as an arg here; can we remove it?
@@ -762,6 +797,7 @@ class API(ModelView):
             end = len(instances)
         objects = [_to_dict_include(x, deep, include=self.include_columns)
                    for x in instances[start:end]]
+        self._after_search(objects, page_num)
         return jsonify(page=page_num, objects=objects)
 
     def _check_authentication(self):
@@ -816,9 +852,15 @@ class API(ModelView):
         inst = self._get_by(instid)
         if inst is None:
             abort(404)
+            
+        proceed = self._before_get(inst)
+        if proceed != True:
+            return proceed
+            
         relations = _get_relations(self.model)
         deep = dict((r, {}) for r in relations)
         result = _to_dict_include(inst, deep, include=self.include_columns)
+        self._after_get(inst)
         return jsonify(result)
 
     def delete(self, instid):
@@ -833,8 +875,14 @@ class API(ModelView):
         self._check_authentication()
         inst = self._get_by(instid)
         if inst is not None:
+            
+            proceed = self._before_delete(inst)
+            if proceed != True:
+                return proceed
+            
             self.session.delete(inst)
             self.session.commit()
+            self._after_delete(model)
         return jsonify_status_code(204)
 
     def post(self):
@@ -895,12 +943,19 @@ class API(ModelView):
                     subinst = _get_or_create(self.session, submodel, **kw)[0]
                     getattr(instance, col).append(subinst)
 
+            proceed = self._before_create(instance)
+            if proceed != True:
+                return proceed
+            
             # add the created model to the session
             self.session.add(instance)
             self.session.commit()
 
             pk_name = str(_primary_key_name(instance))
             pk_value = getattr(instance, pk_name)
+            
+            self._after_create(instance)
+            
             return jsonify_status_code(201, **{pk_name: pk_value})
         except self.validation_exceptions, exception:
             return self._handle_validation_exception(exception)
@@ -943,6 +998,10 @@ class API(ModelView):
             query = self._query_by_primary_key(instid)
             assert query.count() == 1, 'Multiple rows with same ID'
 
+        proceed = self._before_update(query, data)
+        if proceed != True:
+            return proceed
+        
         relations = self._update_relations(query, data)
         field_list = frozenset(data) ^ relations
         params = dict((field, data[field]) for field in field_list)
@@ -960,6 +1019,7 @@ class API(ModelView):
                         setattr(item, param, value)
                     num_modified += 1
             self.session.commit()
+            self._after_update(query, data, num_modified)
         except self.validation_exceptions, exception:
             return self._handle_validation_exception(exception)
 
