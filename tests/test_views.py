@@ -833,7 +833,102 @@ class APITestCase(TestSupport):
         response = self.app.get('/api/planet/Earth')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(loads(response.data), dict(name='Earth'))
-
+    
+    def test_after_action_extension_hooks(self):
+        from flask.ext.restless.views import API
+        
+        class PlanetAPI(API):
+            
+            after_search = after_get = after_update = after_delete = after_create = False
+            
+            def _after_search(self, models, page_num=None):
+                PlanetAPI.after_search = len(models)
+    
+            def _after_get(self, model):
+                PlanetAPI.after_get = model.name
+            
+            def _after_update(self, query, data, num_modified):
+                PlanetAPI.after_update = True
+            
+            def _after_delete(self, model):
+                PlanetAPI.after_delete = model.name
+                
+            def _after_create(self, model):
+                PlanetAPI.after_create = model.name
+            
+        self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
+        
+        response = self.app.get('/api/planet/1')
+        self.assertFalse(PlanetAPI.after_get) # Non 200 response, so hook not triggered
+        
+        response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
+        self.assertEqual(PlanetAPI.after_create, 'Earth') # hook was called and received created model
+        
+        response = self.app.get('/api/planet/Earth')
+        self.assertEqual(PlanetAPI.after_get, 'Earth') # hook was called and received found model
+        
+        response = self.app.get('/api/planet')
+        self.assertEqual(PlanetAPI.after_search, 1) # hook was called and received found models
+        
+        response = self.app.delete('/api/planet/Mars')
+        self.assertFalse(PlanetAPI.after_delete) # Not found, thus hook not trigerred
+        
+        response = self.app.delete('/api/planet/Earth')
+        self.assertEqual(PlanetAPI.after_delete, 'Earth') # hook was called and received deleted model
+        
+    
+    def test_before_action_extension_hooks(self):
+        from flask.ext.restless.views import API
+        
+        class PlanetAPI(API):
+            
+            before_search = before_get = before_update = before_delete = before_create = False
+            
+            def _before_search(self, result):
+                PlanetAPI.before_search = len(result)
+                return True
+            
+            def _before_get(self, model):
+                PlanetAPI.before_get = model.name
+                return True
+            
+            def _before_create(self, model):
+                PlanetAPI.before_create = model.name
+                return True
+            
+            def _before_update(self, query, data):
+                PlanetAPI.before_update = query.count()
+                return True
+            
+            def _before_delete(self, model):
+                PlanetAPI.before_delete = model.name
+                return True
+            
+        self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
+        
+        self.session.query(self.Planet).filter(self.Planet.name==u'Earth').delete()
+        
+        response = self.app.get('/api/planet/1')
+        self.assertFalse(PlanetAPI.before_get) # Not found, stay on default flow
+        
+        response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
+        self.assertEqual(PlanetAPI.before_create, 'Earth') # hook was called and received model 
+                                                           # which is about to be created
+        
+        response = self.app.get('/api/planet/Earth')
+        self.assertEqual(PlanetAPI.before_get, 'Earth') # hook was called and received found model
+        
+        response = self.app.get('/api/planet')
+        self.assertEqual(PlanetAPI.before_search, 1) # hook was called and received found models about to be sent to user
+        
+        response = self.app.delete('/api/planet/Mars')
+        self.assertFalse(PlanetAPI.before_delete) # Not found, thus hook not trigerred
+        
+        response = self.app.delete('/api/planet/Earth')
+        self.assertEqual(PlanetAPI.before_delete, 'Earth') # hook was called and received model which is about to be created
+        
+    
+    
     def test_post_form_preprocessor(self):
         """Tests POST method decoration using a custom function."""
         def decorator_function(params):

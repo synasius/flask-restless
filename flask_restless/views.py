@@ -461,6 +461,9 @@ class API(ModelView):
     def _after_get(self, model):
         pass
     
+    def _after_create(self, model):
+        pass
+    
     def _after_update(self, query, data, num_modified):
         pass
     
@@ -474,6 +477,9 @@ class API(ModelView):
         return True
     
     def _before_get(self, model):
+        return True
+    
+    def _before_create(self, instance):
         return True
     
     def _before_update(self, query, data):
@@ -874,6 +880,7 @@ class API(ModelView):
         """
         self._check_authentication()
         inst = self._get_by(instid)
+        
         if inst is not None:
             
             proceed = self._before_delete(inst)
@@ -882,7 +889,7 @@ class API(ModelView):
             
             self.session.delete(inst)
             self.session.commit()
-            self._after_delete(model)
+            self._after_delete(inst)
         return jsonify_status_code(204)
 
     def post(self):
