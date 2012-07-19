@@ -843,18 +843,23 @@ class APITestCase(TestSupport):
             
             def _after_search(self, models, page_num=None):
                 PlanetAPI.after_search = len(models)
+                return True
     
             def _after_get(self, model):
                 PlanetAPI.after_get = model.name
+                return True
             
             def _after_update(self, query, data, num_modified):
                 PlanetAPI.after_update = True
+                return True
             
             def _after_delete(self, model):
                 PlanetAPI.after_delete = model.name
+                return True
                 
             def _after_create(self, model):
                 PlanetAPI.after_create = model.name
+                return True
             
         self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
         

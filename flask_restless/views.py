@@ -456,19 +456,19 @@ class API(ModelView):
     Extension hooks. Child classes should override these.
     """
     def _after_search(self, models, page_num=None):
-        pass
+        return True
     
     def _after_get(self, model):
-        pass
+        return True
     
     def _after_create(self, model):
-        pass
+        return True
     
     def _after_update(self, query, data, num_modified):
-        pass
+        return True
     
     def _after_delete(self, model):
-        pass
+        return True
     
     def _before_search(self, result):
         """
@@ -479,7 +479,7 @@ class API(ModelView):
     def _before_get(self, model):
         return True
     
-    def _before_create(self, instance):
+    def _before_create(self, model):
         return True
     
     def _before_update(self, query, data):
@@ -866,7 +866,11 @@ class API(ModelView):
         relations = _get_relations(self.model)
         deep = dict((r, {}) for r in relations)
         result = _to_dict_include(inst, deep, include=self.include_columns)
-        self._after_get(inst)
+        
+        proceed = self._after_get(inst)
+        if proceed != True:
+            return proceed
+        
         return jsonify(result)
 
     def delete(self, instid):
@@ -889,7 +893,11 @@ class API(ModelView):
             
             self.session.delete(inst)
             self.session.commit()
-            self._after_delete(inst)
+            
+            proceed = self._after_delete(inst)
+            if proceed != True:
+                return proceed
+            
         return jsonify_status_code(204)
 
     def post(self):
@@ -961,7 +969,9 @@ class API(ModelView):
             pk_name = str(_primary_key_name(instance))
             pk_value = getattr(instance, pk_name)
             
-            self._after_create(instance)
+            proceed = self._after_create(instance)
+            if proceed != True:
+                return proceed
             
             return jsonify_status_code(201, **{pk_name: pk_value})
         except self.validation_exceptions, exception:
@@ -1026,7 +1036,11 @@ class API(ModelView):
                         setattr(item, param, value)
                     num_modified += 1
             self.session.commit()
-            self._after_update(query, data, num_modified)
+            
+            proceed = self._after_update(query, data, num_modified)
+            if proceed != True:
+                return proceed
+            
         except self.validation_exceptions, exception:
             return self._handle_validation_exception(exception)
 
