@@ -470,9 +470,9 @@ class API(ModelView):
     def _after_delete(self, model):
         return True
     
-    def _before_search(self, result):
+    def _before_search(self, data):
         """
-        `result` - either single model or list of models
+        `data` - query parameters
         """
         return True
     
@@ -742,7 +742,11 @@ class API(ModelView):
             data = json.loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError):
             return jsonify_status_code(400, message='Unable to decode data')
-
+        
+        proceed = self._before_search(data)
+        if proceed != True:
+            return proceed
+        
         # perform a filtered search
         try:
             result = search(self.session, self.model, data)
@@ -753,10 +757,6 @@ class API(ModelView):
         except:
             return jsonify_status_code(400,
                                        message='Unable to construct query')
-
-        proceed = self._before_search(result)
-        if proceed != True:
-            return proceed
         
         # create a placeholder for the relations of the returned models
         relations = _get_relations(self.model)
