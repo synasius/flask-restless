@@ -461,10 +461,10 @@ class API(ModelView):
     def _after_get(self, model):
         return True
     
-    def _after_create(self, model):
+    def _after_post(self, model):
         return True
     
-    def _after_update(self, query, data, num_modified):
+    def _after_patch(self, query, data, num_modified):
         return True
     
     def _after_delete(self, model):
@@ -479,10 +479,10 @@ class API(ModelView):
     def _before_get(self, model):
         return True
     
-    def _before_create(self, model):
+    def _before_post(self, model):
         return True
     
-    def _before_update(self, query, data):
+    def _before_patch(self, query, data):
         return True
     
     def _before_delete(self, model):
@@ -958,7 +958,7 @@ class API(ModelView):
                     subinst = _get_or_create(self.session, submodel, **kw)[0]
                     getattr(instance, col).append(subinst)
 
-            proceed = self._before_create(instance)
+            proceed = self._before_post(instance)
             if proceed != True:
                 return proceed
             
@@ -969,7 +969,7 @@ class API(ModelView):
             pk_name = str(_primary_key_name(instance))
             pk_value = getattr(instance, pk_name)
             
-            proceed = self._after_create(instance)
+            proceed = self._after_post(instance)
             if proceed != True:
                 return proceed
             
@@ -1015,7 +1015,7 @@ class API(ModelView):
             query = self._query_by_primary_key(instid)
             assert query.count() == 1, 'Multiple rows with same ID'
 
-        proceed = self._before_update(query, data)
+        proceed = self._before_patch(query, data)
         if proceed != True:
             return proceed
         
@@ -1037,7 +1037,7 @@ class API(ModelView):
                     num_modified += 1
             self.session.commit()
             
-            proceed = self._after_update(query, data, num_modified)
+            proceed = self._after_patch(query, data, num_modified)
             if proceed != True:
                 return proceed
             

@@ -839,7 +839,7 @@ class APITestCase(TestSupport):
         
         class PlanetAPI(API):
             
-            after_search = after_get = after_update = after_delete = after_create = False
+            after_search = after_get = after_patch = after_delete = after_post = False
             
             def _after_search(self, models, page_num=None):
                 PlanetAPI.after_search = len(models)
@@ -850,7 +850,7 @@ class APITestCase(TestSupport):
                 return True
             
             def _after_update(self, query, data, num_modified):
-                PlanetAPI.after_update = True
+                PlanetAPI.after_patch = True
                 return True
             
             def _after_delete(self, model):
@@ -858,7 +858,7 @@ class APITestCase(TestSupport):
                 return True
                 
             def _after_create(self, model):
-                PlanetAPI.after_create = model.name
+                PlanetAPI.after_post = model.name
                 return True
             
         self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
@@ -867,7 +867,7 @@ class APITestCase(TestSupport):
         self.assertFalse(PlanetAPI.after_get) # Non 200 response, so hook not triggered
         
         response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
-        self.assertEqual(PlanetAPI.after_create, 'Earth') # hook was called and received created model
+        self.assertEqual(PlanetAPI.after_post, 'Earth') # hook was called and received created model
         
         response = self.app.get('/api/planet/Earth')
         self.assertEqual(PlanetAPI.after_get, 'Earth') # hook was called and received found model
@@ -887,22 +887,21 @@ class APITestCase(TestSupport):
         
         class PlanetAPI(API):
             
-            before_search = before_get = before_update = before_delete = before_create = False
+            before_search = before_get = before_patch = before_delete = before_post = False
             
-            def _before_search(self, result):
-                PlanetAPI.before_search = len(result)
+            def _before_search(self, query):
                 return True
             
             def _before_get(self, model):
                 PlanetAPI.before_get = model.name
                 return True
             
-            def _before_create(self, model):
-                PlanetAPI.before_create = model.name
+            def _before_post(self, model):
+                PlanetAPI.before_post = model.name
                 return True
             
-            def _before_update(self, query, data):
-                PlanetAPI.before_update = query.count()
+            def _before_patch(self, query, data):
+                PlanetAPI.before_patch = query.count()
                 return True
             
             def _before_delete(self, model):
@@ -917,7 +916,7 @@ class APITestCase(TestSupport):
         self.assertFalse(PlanetAPI.before_get) # Not found, stay on default flow
         
         response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
-        self.assertEqual(PlanetAPI.before_create, 'Earth') # hook was called and received model 
+        self.assertEqual(PlanetAPI.before_post, 'Earth') # hook was called and received model 
                                                            # which is about to be created
         
         response = self.app.get('/api/planet/Earth')
