@@ -834,105 +834,6 @@ class APITestCase(TestSupport):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(loads(response.data), dict(name='Earth'))
     
-    def test_after_action_extension_hooks(self):
-        from flask.ext.restless.views import API
-        
-        class PlanetAPI(API):
-            
-            after_search = after_get = after_patch = after_delete = after_post = False
-            
-            def _after_search(self, models, page_num=None):
-                PlanetAPI.after_search = len(models)
-                return True
-    
-            def _after_get(self, model):
-                PlanetAPI.after_get = model.name
-                return True
-            
-            def _after_update(self, query, data, num_modified):
-                PlanetAPI.after_patch = True
-                return True
-            
-            def _after_delete(self, model):
-                PlanetAPI.after_delete = model.name
-                return True
-                
-            def _after_create(self, model):
-                PlanetAPI.after_post = model.name
-                return True
-            
-        self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
-        
-        response = self.app.get('/api/planet/1')
-        self.assertFalse(PlanetAPI.after_get) # Non 200 response, so hook not triggered
-        
-        response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
-        self.assertEqual(PlanetAPI.after_post, 'Earth') # hook was called and received created model
-        
-        response = self.app.get('/api/planet/Earth')
-        self.assertEqual(PlanetAPI.after_get, 'Earth') # hook was called and received found model
-        
-        response = self.app.get('/api/planet')
-        self.assertEqual(PlanetAPI.after_search, 1) # hook was called and received found models
-        
-        response = self.app.delete('/api/planet/Mars')
-        self.assertFalse(PlanetAPI.after_delete) # Not found, thus hook not trigerred
-        
-        response = self.app.delete('/api/planet/Earth')
-        self.assertEqual(PlanetAPI.after_delete, 'Earth') # hook was called and received deleted model
-        
-    
-    def test_before_action_extension_hooks(self):
-        from flask.ext.restless.views import API
-        
-        class PlanetAPI(API):
-            
-            before_search = before_get = before_patch = before_delete = before_post = False
-            
-            def _before_search(self, query):
-                return True
-            
-            def _before_get(self, model):
-                PlanetAPI.before_get = model.name
-                return True
-            
-            def _before_post(self, model):
-                PlanetAPI.before_post = model.name
-                return True
-            
-            def _before_patch(self, query, data):
-                PlanetAPI.before_patch = query.count()
-                return True
-            
-            def _before_delete(self, model):
-                PlanetAPI.before_delete = model.name
-                return True
-            
-        self.manager.create_api(self.Planet, methods=['GET', 'POST', 'PATCH', 'DELETE'], api_class=PlanetAPI)
-        
-        self.session.query(self.Planet).filter(self.Planet.name==u'Earth').delete()
-        
-        response = self.app.get('/api/planet/1')
-        self.assertFalse(PlanetAPI.before_get) # Not found, stay on default flow
-        
-        response = self.app.post('/api/planet', data=dumps(dict(name='Earth')))
-        self.assertEqual(PlanetAPI.before_post, 'Earth') # hook was called and received model 
-                                                           # which is about to be created
-        
-        response = self.app.get('/api/planet/Earth')
-        self.assertEqual(PlanetAPI.before_get, 'Earth') # hook was called and received found model
-        
-        response = self.app.get('/api/planet')
-        self.assertEqual(PlanetAPI.before_search, 1) # hook was called and received found models about to be sent to user
-        
-        response = self.app.delete('/api/planet/Mars')
-        self.assertFalse(PlanetAPI.before_delete) # Not found, thus hook not trigerred
-        
-        response = self.app.delete('/api/planet/Earth')
-        self.assertEqual(PlanetAPI.before_delete, 'Earth') # hook was called and received model which is about to be created
-        
-    
-    
     def test_post_form_preprocessor(self):
         """Tests POST method decoration using a custom function."""
         def decorator_function(params):
@@ -953,6 +854,180 @@ class APITestCase(TestSupport):
         person = self.session.query(self.Person).filter_by(id=loads(response.data)['id']).first()
         self.assertEquals(person.other, 7)
 
+from flask.ext.restless.views import API, jsonify_status_code
+class ExtendedAPITestCase(TestSupportPrefilled):
+    def setUp(self):
+        
+        # create the database
+        super(ExtendedAPITestCase, self).setUp()
+        
+        # create computers that belong to different people
+        self.session.add( self.Computer( vendor=u'Lenovo', name=u'ThinkPad', owner_id=1 ))
+        self.session.add( self.Computer( vendor=u'Apple', name=u'MBP', owner_id=2 ))
+        self.session.commit()
+        
+    def test_before_hooks_can_abort_request(self):
+        
+        class ComputerAPI(API):
+            
+            # Logged in user
+            current_user_id = 1
+            
+            def _before_get(self, model):
+                """Allow to see only own computer"""
+                if model.owner_id != self.current_user_id:
+                    return jsonify_status_code(401)
+                else:
+                    return True
+                return True
+                
+            def _before_search(self, data):
+                """Don't allow to filter results"""
+                if data.has_key('filters'):
+                    return jsonify_status_code(401)
+                else:
+                    return True
+                
+            def _before_post(self, model):
+                """Only user with id 1 has permissions to create computers"""
+                if self.current_user_id != 1:
+                    return jsonify_status_code(401)
+                else:
+                    return True
+                
+            def _before_patch(self, query, data):
+                """Only allow to change owned computer"""
+                
+                computer = query.first()
+                if computer.owner_id == self.current_user_id:
+                    return True
+                else:
+                    return jsonify_status_code(401)
+                
+            def _before_delete(self, model):
+                """Only allow to delete owned computer"""
+                if model.owner_id != self.current_user_id:
+                    return jsonify_status_code(401)
+                else:
+                    return True
+        
+        self.manager.create_api(
+                                self.Computer, 
+                                api_class=ComputerAPI,
+                                include_columns=['id', 'vendor', 'brand'],
+                                methods=['GET', 'POST', 'PATCH', 'DELETE']
+                                )
+        
+        ###
+        # User #1 owns computer #2, and user #2 owns computer #2
+        # 
+        # Authenticated user is user #1
+        ###
+        
+        # Allow to get owned computer
+        response = self.app.get('/api/computer/1')
+        self.assertEqual(response.status_code, 200)
+        
+        # Don't allow to see computer one doesn't own
+        response = self.app.get('/api/computer/2')
+        self.assertEqual(response.status_code, 401)
+        
+        # Allow search without params
+        response = self.app.get('/api/computer')
+        self.assertEqual(response.status_code, 200)
+        
+        # Don't allow to use filters
+        response = self.app.get('/api/computer?q=' + json.dumps({'filters': ['foo']}))
+        self.assertEqual(response.status_code, 401)
+        
+        # Allow to update owned computer
+        response = self.app.patch('/api/computer/1', data=json.dumps({'name': u'XYZ'}))
+        self.assertEqual(response.status_code, 200)
+        
+        # Don't allow to update computer not owned
+        response = self.app.patch('/api/computer/2', data=json.dumps({'name': u'ZYX'}))
+        self.assertEqual(response.status_code, 401)
+        
+        # Allow to delete owned computer
+        response = self.app.delete('/api/computer/1')
+        self.assertEqual(response.status_code, 204)
+        
+        # Don't allow to update computer not owned
+        response = self.app.delete('/api/computer/2')
+        self.assertEqual(response.status_code, 401)
+        
+        # Allow user #1 to create computers
+        response = self.app.post('/api/computer', data=json.dumps({'name': u'DELL','vendor': 'Supratronic','owner_id': 1}))
+        self.assertEqual(response.status_code, 201)
+        
+        # Don't Allow user #2 to create computers
+        ComputerAPI.current_user_id = 2
+        cnt = self.session.query(self.Computer).count()
+        response = self.app.post('/api/computer', data=json.dumps({'name': u'HP','vendor': 'Latitude','owner_id': 1}))
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(cnt, self.session.query(self.Computer).count())
+        
+    def test_before_hooks_can_modify_request_params(self):
+        class ComputerAPI(API):
+            
+            # Logged in user
+            current_user_id = 1
+            
+            def _before_search(self, data):
+                """Find only owned computers"""
+                if not data.has_key('filters'):
+                    data['filters'] = []
+                data['filters'].append({
+                                        'op': 'eq', 
+                                        'val': self.current_user_id,
+                                        'name': 'owner_id'
+                                        })
+                
+                return True
+                
+            def _before_post(self, model):
+                """Set current user as owner"""
+                model.owner_id = self.current_user_id
+                return True
+                
+            def _before_patch(self, query, data):
+                """Set buy_date to the time computer was updated"""
+                computer = query.first()
+                computer.buy_date = datetime.now()
+                return True
+                
+            def _before_delete(self, model):
+                """Make a copy of computer being deleted - kinda archive"""
+                archived = self.model(name=model.name+'_archived', vendor=model.name+'_archived')
+                self.session.add(archived)
+                return True
+
+        self.manager.create_api(
+                                self.Computer, 
+                                api_class=ComputerAPI,
+                                include_columns=['id', 'vendor', 'brand'],
+                                methods=['GET', 'POST', 'PATCH', 'DELETE']
+                                )
+        
+        # Only single owned computer is found
+        response = self.app.get('/api/computer')
+        self.assertEqual(len(loads(response.data)['objects']), 1)
+        self.assertEqual(loads(response.data)['objects'][0]['id'], 1)
+        
+        # Owner is set to logged in user
+        response = self.app.post('/api/computer', data=json.dumps({'name': u'DELL','vendor': 'Supratronic'}))
+        computer = self.session.query(self.Computer).get(loads(response.data)['id'])
+        self.assertEqual(computer.owner_id, 1)
+        
+        # Buy date is set automatically
+        response = self.app.patch('/api/computer/1', data=json.dumps({'name': u'X62','vendor': 'Lenovo'}))
+        computer = self.session.query(self.Computer).get(loads(response.data)['id'])
+        self.assertNotEqual(computer.buy_date, None)
+        
+        # Archived computer is created
+        response = self.app.delete('/api/computer/2')
+        computer = self.session.query(self.Computer).filter(self.Computer.name==u'MBP_archived').first()
+        self.assertNotEqual(computer, None)
 
 def load_tests(loader, standard_tests, pattern):
     """Returns the test suite for this module."""
@@ -961,4 +1036,5 @@ def load_tests(loader, standard_tests, pattern):
     suite.addTest(loader.loadTestsFromTestCase(FunctionAPITestCase))
     suite.addTest(loader.loadTestsFromTestCase(FunctionEvaluationTest))
     suite.addTest(loader.loadTestsFromTestCase(APITestCase))
+    suite.addTest(loader.loadTestsFromTestCase(ExtendedAPITestCase))
     return suite
