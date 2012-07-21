@@ -486,7 +486,7 @@ class API(ModelView):
     def _before_get(self, model):
         return True
     
-    def _before_post(self, model):
+    def _before_post(self, model, params):
         return True
     
     def _before_patch(self, query, data):
@@ -966,7 +966,11 @@ class API(ModelView):
             modelargs = dict([(i, params[i]) for i in props])
             # HACK Python 2.5 requires __init__() keywords to be strings.
             instance = self.model(**unicode_keys_to_strings(modelargs))
-
+            
+            proceed = self._before_post(instance, params)
+            if proceed != True:
+                return proceed
+            
             # Handling relations, a single level is allowed
             for col in set(relations).intersection(paramkeys):
                 submodel = cols[col].property.mapper.class_
@@ -975,10 +979,6 @@ class API(ModelView):
                     subinst = _get_or_create(self.session, submodel, **kw)[0]
                     getattr(instance, col).append(subinst)
 
-            proceed = self._before_post(instance)
-            if proceed != True:
-                return proceed
-            
             # add the created model to the session
             self.session.add(instance)
             self.session.commit()
