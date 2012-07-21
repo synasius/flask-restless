@@ -455,12 +455,13 @@ class API(ModelView):
     """
     Extension hooks. Child classes should override these.
     """
-    def _after_search(self, result, data, page_num=None):
+    def _after_search(self, result, data):
         """
         `result` will be a single model if such parameter was passed to `search()`
                  and a list otherwise.
         `data` is serialized result ready to be jsonified
-        `page_num` will be `None` if single result is being returned
+               - For single model search this will be the model found
+               - For many model search this will be `{objects: <list of objects found>, page: <page_number>}`
         """
         return True
     
@@ -814,11 +815,13 @@ class API(ModelView):
         objects = [_to_dict_include(x, deep, include=self.include_columns)
                    for x in instances[start:end]]
         
-        proceed = self._after_search(instances, objects, page_num)
+        data = {'objects': objects, 'page': page_num}
+        
+        proceed = self._after_search(instances, data)
         if proceed != True:
             return proceed
         
-        return jsonify(page=page_num, objects=objects)
+        return jsonify(data)
 
     def _check_authentication(self):
         """If the specified HTTP method requires authentication (see the

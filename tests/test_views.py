@@ -1033,7 +1033,7 @@ class ExtendedAPITestCase(TestSupportPrefilled):
     def test_after_action_hooks_can_return_custom_response(self):
         class ComputerAPI(API):
             
-            def _after_search(self, model, data, page_num=None):
+            def _after_search(self, model, data):
                 return jsonify({'foo': 'bar'})
             
             def _after_get(self, result, data):
@@ -1073,7 +1073,7 @@ class ExtendedAPITestCase(TestSupportPrefilled):
     def test_after_action_hooks_can_modify_response(self):
         class ComputerAPI(API):
             
-            def _after_search(self, model, data, page_num=None):
+            def _after_search(self, model, data):
                 data['foo'] = 'bar'
                 return True
             
