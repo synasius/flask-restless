@@ -854,7 +854,8 @@ class APITestCase(TestSupport):
         person = self.session.query(self.Person).filter_by(id=loads(response.data)['id']).first()
         self.assertEquals(person.other, 7)
 
-from flask.ext.restless.views import API, jsonify_status_code
+from flask import jsonify
+from flask.ext.restless.views import API, jsonify_status_code, _to_dict
 class ExtendedAPITestCase(TestSupportPrefilled):
     def setUp(self):
         
@@ -910,7 +911,7 @@ class ExtendedAPITestCase(TestSupportPrefilled):
                     return jsonify_status_code(401)
                 else:
                     return True
-        
+            
         self.manager.create_api(
                                 self.Computer, 
                                 api_class=ComputerAPI,
@@ -1028,7 +1029,89 @@ class ExtendedAPITestCase(TestSupportPrefilled):
         response = self.app.delete('/api/computer/2')
         computer = self.session.query(self.Computer).filter(self.Computer.name==u'MBP_archived').first()
         self.assertNotEqual(computer, None)
+    
+    def test_after_action_hooks_can_return_custom_response(self):
+        class ComputerAPI(API):
+            
+            def _after_search(self, model, data, page_num=None):
+                return jsonify({'foo': 'bar'})
+            
+            def _after_get(self, result, data):
+                return jsonify({'foo': 'bar'})
+                
+            def _after_post(self, model):
+                return jsonify({'foo': 'bar'})
+                
+            def _after_patch(self, query, data, num_modified):
+                return jsonify({'foo': 'bar'})
+                
+            def _after_delete(self, model):
+                return jsonify({'foo': 'bar'})
 
+        self.manager.create_api(
+                                self.Computer, 
+                                api_class=ComputerAPI,
+                                include_columns=['id', 'vendor', 'brand'],
+                                methods=['GET', 'POST', 'PATCH', 'DELETE']
+                                )
+        
+        response = self.app.get('/api/computer/1')
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.get('/api/computer')
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.patch('/api/computer/1', data=json.dumps({'name': u'XYZ'}))
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.post('/api/computer', data=json.dumps({'name': u'DELL','vendor': 'Supratronic','owner_id': 1}))
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.delete('/api/computer/1')
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+    def test_after_action_hooks_can_modify_response(self):
+        class ComputerAPI(API):
+            
+            def _after_search(self, model, data, page_num=None):
+                data['foo'] = 'bar'
+                return True
+            
+            def _after_get(self, result, data):
+                data['foo'] = 'bar'
+                return True
+                
+            def _after_post(self, model):
+                return jsonify({'foo': 'bar'})
+                
+            def _after_patch(self, query, data, num_modified):
+                return jsonify({'foo': 'bar'})
+                
+            def _after_delete(self, model):
+                return jsonify({'foo': 'bar'})
+
+        self.manager.create_api(
+                                self.Computer, 
+                                api_class=ComputerAPI,
+                                include_columns=['id', 'vendor', 'brand'],
+                                methods=['GET', 'POST', 'PATCH', 'DELETE']
+                                )
+        
+        response = self.app.get('/api/computer/1')
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.get('/api/computer')
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.patch('/api/computer/1', data=json.dumps({'name': u'XYZ'}))
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.post('/api/computer', data=json.dumps({'name': u'DELL','vendor': 'Supratronic','owner_id': 1}))
+        self.assertTrue(loads(response.data).has_key('foo'))
+        
+        response = self.app.delete('/api/computer/1')
+        self.assertTrue(loads(response.data).has_key('foo'))
+    
 def load_tests(loader, standard_tests, pattern):
     """Returns the test suite for this module."""
     suite = TestSuite()

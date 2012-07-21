@@ -455,16 +455,22 @@ class API(ModelView):
     """
     Extension hooks. Child classes should override these.
     """
-    def _after_search(self, models, page_num=None):
+    def _after_search(self, result, data, page_num=None):
+        """
+        `result` will be a single model if such parameter was passed to `search()`
+                 and a list otherwise.
+        `data` is serialized result ready to be jsonified
+        `page_num` will be `None` if single result is being returned
+        """
         return True
     
-    def _after_get(self, model):
+    def _after_get(self, model, data):
         return True
     
     def _after_post(self, model):
         return True
     
-    def _after_patch(self, query, data, num_modified):
+    def _after_patch(self, query, params, num_modified):
         return True
     
     def _after_delete(self, model):
@@ -766,10 +772,14 @@ class API(ModelView):
         if isinstance(result, list):
             return self._paginated(result, deep)
         else:
-            result = _to_dict_include(result, deep,
+            data = _to_dict_include(result, deep,
                                       include=self.include_columns)
-            self._after_search(result)
-            return jsonify(result)
+            
+            proceed = self._after_search(result, data)
+            if proceed != True:
+                return proceed
+            
+            return jsonify(data)
 
     # TODO it is ugly to have `deep` as an arg here; can we remove it?
     def _paginated(self, instances, deep):
@@ -803,7 +813,11 @@ class API(ModelView):
             end = len(instances)
         objects = [_to_dict_include(x, deep, include=self.include_columns)
                    for x in instances[start:end]]
-        self._after_search(objects, page_num)
+        
+        proceed = self._after_search(instances, objects, page_num)
+        if proceed != True:
+            return proceed
+        
         return jsonify(page=page_num, objects=objects)
 
     def _check_authentication(self):
@@ -867,7 +881,7 @@ class API(ModelView):
         deep = dict((r, {}) for r in relations)
         result = _to_dict_include(inst, deep, include=self.include_columns)
         
-        proceed = self._after_get(inst)
+        proceed = self._after_get(inst, result)
         if proceed != True:
             return proceed
         
@@ -1037,7 +1051,7 @@ class API(ModelView):
                     num_modified += 1
             self.session.commit()
             
-            proceed = self._after_patch(query, data, num_modified)
+            proceed = self._after_patch(query, params, num_modified)
             if proceed != True:
                 return proceed
             
