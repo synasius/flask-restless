@@ -889,7 +889,7 @@ class ExtendedAPITestCase(TestSupportPrefilled):
                 else:
                     return True
                 
-            def _before_post(self, model, params):
+            def _before_post(self, params):
                 """Only user with id 1 has permissions to create computers"""
                 if self.current_user_id != 1:
                     return jsonify_status_code(401)
@@ -994,9 +994,9 @@ class ExtendedAPITestCase(TestSupportPrefilled):
                 
                 return True
                 
-            def _before_post(self, model, params):
+            def _before_post(self, params):
                 """Set current user as owner"""
-                model.owner_id = self.current_user_id
+                params['owner_id'] = self.current_user_id
                 return True
                 
             def _before_patch(self, query, data):

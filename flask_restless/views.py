@@ -486,7 +486,7 @@ class API(ModelView):
     def _before_get(self, model):
         return True
     
-    def _before_post(self, model, params):
+    def _before_post(self, params):
         return True
     
     def _before_patch(self, query, data):
@@ -947,7 +947,11 @@ class API(ModelView):
         # If post_form_preprocessor is specified, call it
         if self.post_form_preprocessor:
             params = self.post_form_preprocessor(params)
-
+            
+        proceed = self._before_post(params)
+        if proceed != True:
+            return proceed
+        
         # Getting the list of relations that will be added later
         cols = _get_columns(self.model)
         relations = _get_relations(self.model)
@@ -966,10 +970,6 @@ class API(ModelView):
             modelargs = dict([(i, params[i]) for i in props])
             # HACK Python 2.5 requires __init__() keywords to be strings.
             instance = self.model(**unicode_keys_to_strings(modelargs))
-            
-            proceed = self._before_post(instance, params)
-            if proceed != True:
-                return proceed
             
             # Handling relations, a single level is allowed
             for col in set(relations).intersection(paramkeys):
