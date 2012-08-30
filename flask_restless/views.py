@@ -463,6 +463,49 @@ class API(ModelView):
                          and self.results_per_page > 0)
         self.post_form_preprocessor = post_form_preprocessor
 
+    """
+    Extension hooks. Child classes should override these.
+    """
+    def _after_search(self, result, data):
+        """
+        `result` will be a single model if such parameter was passed to `search()`
+                 and a list otherwise.
+        `data` is serialized result ready to be jsonified
+               - For single model search this will be the model found
+               - For many model search this will be `{objects: <list of objects found>, page: <page_number>}`
+        """
+        return True
+    
+    def _after_get(self, model, data):
+        return True
+    
+    def _after_post(self, model):
+        return True
+    
+    def _after_patch(self, query, params, num_modified):
+        return True
+    
+    def _after_delete(self, model):
+        return True
+    
+    def _before_search(self, data):
+        """
+        `data` - query parameters
+        """
+        return True
+    
+    def _before_get(self, model):
+        return True
+    
+    def _before_post(self, params):
+        return True
+    
+    def _before_patch(self, query, data):
+        return True
+    
+    def _before_delete(self, model):
+        return True
+    
     def _add_to_relation(self, query, relationname, toadd=None):
         """Adds a new or existing related model to each model specified by
         `query`.
@@ -717,7 +760,11 @@ class API(ModelView):
             data = json.loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError):
             return jsonify_status_code(400, message='Unable to decode data')
-
+        
+        proceed = self._before_search(data)
+        if proceed != True:
+            return proceed
+        
         # perform a filtered search
         try:
             result = search(self.session, self.model, data)
@@ -737,9 +784,14 @@ class API(ModelView):
         if isinstance(result, list):
             return self._paginated(result, deep)
         else:
-            result = _to_dict_include(result, deep,
+            data = _to_dict_include(result, deep,
                                       include=self.include_columns)
-            return jsonify(result)
+            
+            proceed = self._after_search(result, data)
+            if proceed != True:
+                return proceed
+            
+            return jsonify(data)
 
     # TODO it is ugly to have `deep` as an arg here; can we remove it?
     def _paginated(self, instances, deep):
@@ -777,7 +829,13 @@ class API(ModelView):
             
         objects = [_to_dict_include(x, deep, include=self.include_columns)
                    for x in instances[start:end]]
-        return jsonify(page=page_num, objects=objects, total_pages=total_pages)
+        data = {'objects': objects, 'page': page_num, 'total_pages': total_pages}
+        
+        proceed = self._after_search(instances, data)
+        if proceed != True:
+            return proceed
+        
+        return jsonify(data)
 
     def _check_authentication(self):
         """If the specified HTTP method requires authentication (see the
@@ -831,9 +889,19 @@ class API(ModelView):
         inst = self._get_by(instid)
         if inst is None:
             abort(404)
+            
+        proceed = self._before_get(inst)
+        if proceed != True:
+            return proceed
+            
         relations = _get_relations(self.model)
         deep = dict((r, {}) for r in relations)
         result = _to_dict_include(inst, deep, include=self.include_columns)
+        
+        proceed = self._after_get(inst, result)
+        if proceed != True:
+            return proceed
+        
         return jsonify(result)
 
     def delete(self, instid):
@@ -847,9 +915,20 @@ class API(ModelView):
         """
         self._check_authentication()
         inst = self._get_by(instid)
+        
         if inst is not None:
+            
+            proceed = self._before_delete(inst)
+            if proceed != True:
+                return proceed
+            
             self.session.delete(inst)
             self.session.commit()
+            
+            proceed = self._after_delete(inst)
+            if proceed != True:
+                return proceed
+            
         return jsonify_status_code(204)
 
     def post(self):
@@ -882,7 +961,11 @@ class API(ModelView):
         # If post_form_preprocessor is specified, call it
         if self.post_form_preprocessor:
             params = self.post_form_preprocessor(params)
-
+            
+        proceed = self._before_post(params)
+        if proceed != True:
+            return proceed
+        
         # Getting the list of relations that will be added later
         cols = _get_columns(self.model)
         relations = _get_relations(self.model)
@@ -925,6 +1008,11 @@ class API(ModelView):
 
             pk_name = str(_primary_key_name(instance))
             pk_value = getattr(instance, pk_name)
+            
+            proceed = self._after_post(instance)
+            if proceed != True:
+                return proceed
+            
             return jsonify_status_code(201, **{pk_name: pk_value})
         except self.validation_exceptions, exception:
             return self._handle_validation_exception(exception)
@@ -967,6 +1055,10 @@ class API(ModelView):
             query = self._query_by_primary_key(instid)
             assert query.count() == 1, 'Multiple rows with same ID'
 
+        proceed = self._before_patch(query, data)
+        if proceed != True:
+            return proceed
+        
         relations = self._update_relations(query, data)
         field_list = frozenset(data) ^ relations
         params = dict((field, data[field]) for field in field_list)
@@ -984,6 +1076,11 @@ class API(ModelView):
                         setattr(item, param, value)
                     num_modified += 1
             self.session.commit()
+            
+            proceed = self._after_patch(query, params, num_modified)
+            if proceed != True:
+                return proceed
+            
         except self.validation_exceptions, exception:
             return self._handle_validation_exception(exception)
 
