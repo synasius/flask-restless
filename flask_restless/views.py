@@ -21,6 +21,8 @@
     :license: GNU AGPLv3+ or BSD
 
 """
+from __future__ import division
+
 import datetime
 import math
 
@@ -185,12 +187,14 @@ def _to_dict(instance, deep=None, exclude=None):
         # (as specified by a dynamic relationship loader), or an actual
         # instance of a model.
         relatedvalue = getattr(instance, relation)
-        # HACK: In case the relatedvalue is a dynamically loaded relationship,
-        # we need to resolve the query into a concrete list of objects. See
-        # issue #89.
+        # HACK: In case the relatedvalue is a dynamically loaded
+        # relationship, we need to resolve the query into a concrete
+        # list of objects; see issue #89. We should also check to see
+        # if relatedvalue is a many-to-one relationship, in order to
+        # call relatedvalue.one() or something, but I don't know how
+        # to do that.
         if isinstance(relatedvalue, (AppenderMixin, Query)):
             relatedvalue = relatedvalue.all()
-
         if relatedvalue is None:
             result[relation] = None
         elif isinstance(relatedvalue, list):
@@ -810,23 +814,23 @@ class API(ModelView):
 
            {
              "page": 2,
+             "total_pages": 3,
              "objects": [{"id": 1, "name": "Jeffrey", "age": 24}, ...]
            }
 
         """
+        num_results = len(instances)
         if self.paginate:
             # get the page number (first page is page 1)
             page_num = int(request.args.get('page', 1))
             start = (page_num - 1) * self.results_per_page
-            end = min(len(instances), start + self.results_per_page)
-            total_pages = int(math.ceil(len(instances) / float(self.results_per_page)))
-
+            end = min(num_results, start + self.results_per_page)
+            total_pages = int(math.ceil(num_results / self.results_per_page))
         else:
             page_num = 1
             start = 0
-            end = len(instances)
+            end = num_results
             total_pages = 1
-            
         objects = [_to_dict_include(x, deep, include=self.include_columns)
                    for x in instances[start:end]]
         data = {'objects': objects, 'page': page_num, 'total_pages': total_pages}
@@ -915,7 +919,6 @@ class API(ModelView):
         """
         self._check_authentication()
         inst = self._get_by(instid)
-        
         if inst is not None:
             
             proceed = self._before_delete(inst)
